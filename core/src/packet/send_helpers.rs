@@ -74,7 +74,7 @@ pub async fn send_keep_alive<T: ReadWriteIpcSegment>(
 pub async fn send_custom_world_packet(segment: CustomIpcSegment) -> Option<CustomIpcSegment> {
     let config = get_config();
 
-    let addr = config.world.get_public_socketaddr();
+    let addr = config.world.get_internal_socketaddr();
 
     let mut stream = TcpStream::connect(addr).await.ok()?;
 
@@ -100,6 +100,11 @@ pub async fn send_custom_world_packet(segment: CustomIpcSegment) -> Option<Custo
     let n = stream.read(&mut buf).await.expect("Failed to read data!");
     if n != 0 {
         let segments = parse_packet::<CustomIpcSegment>(&buf[..n], &mut packet_state);
+
+        if segments.is_empty() {
+            tracing::warn!("World IPC returned an empty or unparsable packet.");
+            return None;
+        }
 
         return match &segments[0].data {
             SegmentData::KawariIpc(data) => Some(data.clone()),
