@@ -321,6 +321,11 @@ pub struct WorldConfig {
     #[serde(default = "WorldConfig::default_server_name")]
     pub server_name: String,
 
+    /// Internal host used by Kawari services when they talk to the world server over custom IPC.
+    /// This should usually stay on loopback even when the public world host is internet-facing.
+    #[serde(default = "WorldConfig::default_internal_server_name")]
+    pub internal_server_name: String,
+
     /// See the World Excel sheet.
     #[serde(default = "WorldConfig::default_world_id")]
     pub world_id: u16,
@@ -365,6 +370,7 @@ impl Default for WorldConfig {
             healthcheck_port: Self::default_healthcheck_port(),
             listen_address: default_listen_address(),
             server_name: Self::default_server_name(),
+            internal_server_name: Self::default_internal_server_name(),
             world_id: Self::default_world_id(),
             enable_packet_obsfucation: Self::default_packet_obsfucation(),
             enable_packet_compression: Self::default_packet_compression(),
@@ -388,6 +394,10 @@ impl WorldConfig {
     }
 
     fn default_server_name() -> String {
+        "127.0.0.1".to_string()
+    }
+
+    fn default_internal_server_name() -> String {
         "127.0.0.1".to_string()
     }
 
@@ -451,6 +461,14 @@ impl WorldConfig {
     pub fn get_public_socketaddr(&self) -> SocketAddr {
         SocketAddr::from((
             IpAddr::from_str(&self.server_name).expect("Invalid IP address format in config!"),
+            self.port,
+        ))
+    }
+
+    pub fn get_internal_socketaddr(&self) -> SocketAddr {
+        SocketAddr::from((
+            IpAddr::from_str(&self.internal_server_name)
+                .expect("Invalid internal IP address format in config!"),
             self.port,
         ))
     }
