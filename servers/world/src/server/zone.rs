@@ -186,10 +186,11 @@ impl Zone {
 
             'outer: for search_dir in search_dirs {
                 // Load drop-ins
-                for entry in std::fs::read_dir(search_dir)
-                    .expect("Didn't find dropins directory?")
-                    .flatten()
-                {
+                let Ok(entries) = std::fs::read_dir(&search_dir) else {
+                    continue;
+                };
+
+                for entry in entries.flatten() {
                     if let Ok(contents) = std::fs::read_to_string(entry.path()) {
                         match serde_json::from_str::<DropIn>(&contents) {
                             Ok(mut dropin) => {
@@ -206,6 +207,7 @@ impl Zone {
                     }
                 }
             }
+
 
             zone.bg_path = lvb.sections[0].general.bg_path.value.clone();
         }
