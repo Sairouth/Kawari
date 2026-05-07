@@ -112,14 +112,16 @@ impl KawariLua {
 
             for search_dir in search_dirs {
                 let effects_dir = format!("{search_dir}/{name}");
-                for entry in std::fs::read_dir(&effects_dir)
-                    .expect("Didn't find effects directory?")
-                    .flatten()
-                {
-                    for entry in std::fs::read_dir(entry.path())
-                        .expect("Failed to read into effects directory")
-                        .flatten()
-                    {
+                let Ok(entries) = std::fs::read_dir(&effects_dir) else {
+                    continue;
+                };
+
+                for entry in entries.flatten() {
+                    let Ok(subentries) = std::fs::read_dir(entry.path()) else {
+                        continue;
+                    };
+
+                    for entry in subentries.flatten() {
                         let path = entry.path();
                         if path.extension().and_then(|x| x.to_str()) == Some("lua") {
                             let stem = path
@@ -142,6 +144,7 @@ impl KawariLua {
                 }
             }
         };
+
 
         // Locate these based on the ID in their filename
         load_based_on_filename("effects", &mut extra_lua_state.effect_scripts);
