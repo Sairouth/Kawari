@@ -92,7 +92,7 @@ function determineSequence(player, cutscene)
         quest = OPENING_QUEST_ULDAH
     end
 
-    if not player:has_quest(quest) then
+    if not player:has_active_quest(quest) then
        return OPENING_SEQ_1
     end
 
