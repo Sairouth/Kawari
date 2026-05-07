@@ -11,6 +11,28 @@ use kawari::{
 };
 
 impl ZoneConnection {
+    fn active_quest_debug(&self) -> Vec<(u16, u8)> {
+        self.player_data
+            .quest
+            .active
+            .0
+            .iter()
+            .map(|quest| (quest.id, quest.sequence))
+            .collect()
+    }
+
+    fn persist_quest_state(&mut self) {
+        let mut database = self.database.lock();
+        database.commit_quest(&self.player_data.quest);
+    }
+
+    async fn refresh_quest_views(&mut self) {
+        self.send_active_quests().await;
+        self.send_quest_tracker().await;
+        self.send_scenario_guide().await;
+        self.persist_quest_state();
+    }
+
     pub async fn send_active_quests(&mut self) {
         let mut quests = Vec::new();
         for quest in &self.player_data.quest.active.0 {
@@ -29,11 +51,19 @@ impl ZoneConnection {
     }
 
     pub async fn send_scenario_guide(&mut self) {
-        // TODO: temporary
+        let (quest_id_1, next_quest_id) = self
+            .player_data
+            .quest
+            .active
+            .0
+            .first()
+            .map(|quest| (quest.id as u32, quest.id as u32))
+            .unwrap_or_default();
+
         let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::ScenarioGuide {
-            quest_id_1: 39,
-            next_quest_id: 85,
-            layout_id: 1985113,
+            quest_id_1,
+            next_quest_id,
+            layout_id: 0,
         });
         self.send_ipc_self(ipc).await;
     }
@@ -69,10 +99,39 @@ impl ZoneConnection {
         }
 
         self.send_quest_tracker().await;
+        self.send_scenario_guide().await;
     }
 
     pub async fn accept_quest(&mut self, id: u32) {
         let adjusted_id = adjust_quest_id(id);
+        tracing::info!(
+            "Accepting quest raw_id={} adjusted_id={} active_before={:?}",
+            id,
+            adjusted_id,
+            self.active_quest_debug()
+        );
+        if self.player_data.quest.completed.contains(adjusted_id) {
+            tracing::warn!("Attempted to accept completed quest {adjusted_id}");
+            return;
+        }
+
+        let index = if let Some(index) = self
+            .player_data
+            .quest
+            .active
+            .0
+            .iter()
+            .position(|quest| quest.id == adjusted_id as u16)
+        {
+            self.player_data.quest.active.0[index].sequence = 0xFF;
+            index
+        } else {
+            self.player_data.quest.active.0.push(PersistentQuest {
+                id: adjusted_id as u16,
+                sequence: 0xFF,
+            });
+            self.player_data.quest.active.0.len() - 1
+        };
 
         let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::AcceptQuest {
             quest_id: adjusted_id,
@@ -81,7 +140,7 @@ impl ZoneConnection {
 
         // Ensure its updated in the journal or whatever
         let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::UpdateQuest {
-            index: 0,
+            index: index as u8,
             quest: ActiveQuest {
                 id: adjusted_id as u16,
                 sequence: 0xFF,
@@ -91,20 +150,25 @@ impl ZoneConnection {
         });
         self.send_ipc_self(ipc).await;
 
-        // Then add it to our own internal data model
-        self.player_data.quest.active.0.push(PersistentQuest {
-            id: adjusted_id as u16,
-            sequence: 0xFF,
-        });
-
-        self.send_quest_tracker().await;
+        self.refresh_quest_views().await;
+        tracing::info!(
+            "Accepted quest adjusted_id={} active_after={:?}",
+            adjusted_id,
+            self.active_quest_debug()
+        );
     }
 
     pub async fn finish_quest(&mut self, id: u32) {
         let adjusted_id = adjust_quest_id(id);
+        tracing::info!(
+            "Finishing quest raw_id={} adjusted_id={} active_before={:?}",
+            id,
+            adjusted_id,
+            self.active_quest_debug()
+        );
 
         // Remove it from our internal data model
-        if let Some(index) = self
+        let index = if let Some(index) = self
             .player_data
             .quest
             .active
@@ -113,7 +177,10 @@ impl ZoneConnection {
             .position(|x| x.id == adjusted_id as u16)
         {
             self.player_data.quest.active.0.remove(index);
-        }
+            Some(index)
+        } else {
+            None
+        };
 
         // Grant rewards
         let rewards;
@@ -132,7 +199,7 @@ impl ZoneConnection {
 
         // Ensure its updated in the journal or whatever
         let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::UpdateQuest {
-            index: 0,
+            index: index.unwrap_or_default() as u8,
             quest: ActiveQuest::default(),
         });
         self.send_ipc_self(ipc).await;
@@ -146,11 +213,17 @@ impl ZoneConnection {
         });
         self.send_ipc_self(ipc).await;
 
-        self.send_quest_tracker().await;
+        self.refresh_quest_views().await;
+        tracing::info!(
+            "Finished quest adjusted_id={} active_after={:?}",
+            adjusted_id,
+            self.active_quest_debug()
+        );
     }
 
     pub async fn finish_all_quests(&mut self) {
         self.player_data.quest.completed.data = vec![0xFF; COMPLETED_QUEST_BITMASK_SIZE];
+        self.persist_quest_state();
         self.send_quest_information().await;
     }
 
@@ -187,22 +260,63 @@ impl ZoneConnection {
 
         // TODO: inform the player, im not sure what this looks like in retail
 
-        self.send_active_quests().await;
-        self.send_quest_tracker().await;
+        self.refresh_quest_views().await;
     }
 
-    pub async fn set_quest_sequence(&mut self, _id: u32, _sequence: u8) {
-        // TODO: implement
+    pub async fn set_quest_sequence(&mut self, id: u32, sequence: u8) {
+        let adjusted_id = adjust_quest_id(id);
+        tracing::info!(
+            "Setting quest sequence raw_id={} adjusted_id={} sequence={} active_before={:?}",
+            id,
+            adjusted_id,
+            sequence,
+            self.active_quest_debug()
+        );
+        let Some((index, quest)) = self
+            .player_data
+            .quest
+            .active
+            .0
+            .iter_mut()
+            .enumerate()
+            .find(|(_, quest)| quest.id == adjusted_id as u16)
+        else {
+            tracing::warn!("Attempted to set sequence for inactive quest {adjusted_id}");
+            return;
+        };
+
+        quest.sequence = sequence;
+
+        let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::UpdateQuest {
+            index: index as u8,
+            quest: ActiveQuest {
+                id: adjusted_id as u16,
+                sequence,
+                flags: 1,
+                ..Default::default()
+            },
+        });
+        self.send_ipc_self(ipc).await;
+
+        self.refresh_quest_views().await;
+        tracing::info!(
+            "Set quest sequence adjusted_id={} sequence={} active_after={:?}",
+            adjusted_id,
+            sequence,
+            self.active_quest_debug()
+        );
     }
 
     pub async fn incomplete_quest(&mut self, id: u32) {
         let adjusted_id = adjust_quest_id(id);
         self.player_data.quest.completed.clear(adjusted_id);
+        self.persist_quest_state();
         self.send_quest_information().await;
     }
 
     pub async fn incomplete_all_quests(&mut self) {
         self.player_data.quest.completed.data = vec![0x0; COMPLETED_QUEST_BITMASK_SIZE];
+        self.persist_quest_state();
         self.send_quest_information().await;
     }
 }
