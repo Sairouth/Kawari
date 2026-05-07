@@ -934,27 +934,30 @@ impl UserData for LuaPlayer {
             this.finish_quest(quest_id);
             Ok(())
         });
-        methods.add_method_mut("has_active_quest", |_, this, quest_id: u16| {
+        methods.add_method_mut("has_active_quest", |_, this, quest_id: u32| {
+            let quest_id = adjust_quest_id(quest_id);
             Ok(this
                 .player_data
                 .quest
                 .active
                 .0
                 .iter()
-                .any(|quest| quest.id == quest_id))
+                .any(|quest| quest.id == quest_id as u16))
         });
-        methods.add_method_mut("has_completed_quest", |_, this, quest_id: u16| {
-            Ok(this.player_data.quest.completed.contains(quest_id as u32))
+        methods.add_method_mut("has_completed_quest", |_, this, quest_id: u32| {
+            let quest_id = adjust_quest_id(quest_id);
+            Ok(this.player_data.quest.completed.contains(quest_id))
         });
-        methods.add_method_mut("has_quest", |_, this, quest_id: u16| {
+        methods.add_method_mut("has_quest", |_, this, quest_id: u32| {
+            let quest_id = adjust_quest_id(quest_id);
             Ok(this
                 .player_data
                 .quest
                 .active
                 .0
                 .iter()
-                .any(|quest| quest.id == quest_id)
-                || this.player_data.quest.completed.contains(quest_id as u32))
+                .any(|quest| quest.id == quest_id as u16)
+                || this.player_data.quest.completed.contains(quest_id))
         });
         methods.add_method_mut("has_seen_cutscene", |_, this, cutscene_id: u32| {
             Ok(this.player_data.unlock.cutscene_seen.contains(cutscene_id))
