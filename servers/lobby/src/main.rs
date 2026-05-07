@@ -70,6 +70,7 @@ async fn main() {
             stored_character_creation_name: String::new(),
             service_accounts: Vec::new(),
             selected_service_account: None,
+            lobby_info_sent: false,
             last_keep_alive: Instant::now(),
             expected_exe_len,
             expected_exe_hash: expected_exe_hash.clone(),
@@ -126,12 +127,9 @@ async fn main() {
                                             account_index,
                                             ..
                                         } => {
-                                            connection.selected_service_account = Some(
-                                                connection.service_accounts
-                                                    [*account_index as usize]
-                                                    .id,
-                                            );
-                                            connection.send_lobby_info(*sequence).await
+                                            connection
+                                                .handle_service_login(*sequence, *account_index)
+                                                .await
                                         }
                                         ClientLobbyIpcData::CharaMake(character_action) => {
                                             connection
