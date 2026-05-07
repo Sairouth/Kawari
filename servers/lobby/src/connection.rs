@@ -180,6 +180,7 @@ pub struct LobbyConnection {
     pub stored_character_creation_name: String,
     pub service_accounts: Vec<ServiceAccount>,
     pub selected_service_account: Option<u64>,
+    pub lobby_info_sent: bool,
     pub last_keep_alive: Instant,
     pub expected_exe_len: usize,
     pub expected_exe_hash: String,
@@ -223,9 +224,15 @@ impl LobbyConnection {
     }
 
     /// Send the service account list to the client.
-    pub async fn send_account_list(&mut self) {
+    pub async fn send_account_list(&mut self, sequence: u64) {
+        tracing::info!(
+            "Sending service account list with {} account(s) for sequence {}.",
+            self.service_accounts.len(),
+            sequence
+        );
+
         let service_account_list = ServerLobbyIpcData::LoginReply(LoginReply {
-            sequence: 0,
+            sequence,
             num_service_accounts: self.service_accounts.len() as u8,
             unk1: 3,
             unk2: 0x99,
@@ -242,8 +249,44 @@ impl LobbyConnection {
         .await;
     }
 
+    pub async fn handle_service_login(&mut self, sequence: u64, account_index: u8) {
+        if self.lobby_info_sent {
+            tracing::info!(
+                "Ignoring duplicate ServiceLogin for sequence {} account_index {}.",
+                sequence,
+                account_index
+            );
+            return;
+        }
+
+        let Some(service_account) = self.service_accounts.get(account_index as usize) else {
+            tracing::warn!(
+                "Client requested invalid service account index {} (have {}).",
+                account_index,
+                self.service_accounts.len()
+            );
+            self.send_error(sequence, 2002, 13006).await;
+            return;
+        };
+
+        self.selected_service_account = Some(service_account.id);
+        self.lobby_info_sent = true;
+        tracing::info!(
+            "Selected service account id {} from index {}.",
+            service_account.id,
+            account_index
+        );
+        self.send_lobby_info(sequence).await;
+    }
+
     /// Send the world, retainer and character list to the client.
     pub async fn send_lobby_info(&mut self, sequence: u64) {
+        tracing::info!(
+            "Preparing lobby info for service account {:?} and sequence {}.",
+            self.selected_service_account,
+            sequence
+        );
+
         let mut packets = Vec::new();
         // send them the server list
         {
@@ -308,7 +351,9 @@ impl LobbyConnection {
                 service_account_id: self.selected_service_account.unwrap(),
             });
 
+            tracing::info!("Requesting character list from world server...");
             let Some(name_response) = send_custom_world_packet(charlist_request).await else {
+                tracing::warn!("World server did not return a character list.");
                 // "World data could not be obtained. Please try logging in later."
                 self.send_error(sequence, 2002, 13201).await;
                 return;
@@ -317,6 +362,12 @@ impl LobbyConnection {
             else {
                 panic!("Unexpedted custom IPC type!")
             };
+
+            tracing::info!(
+                "World server returned {} character(s) for service account {:?}.",
+                characters.len(),
+                self.selected_service_account
+            );
 
             let mut characters = characters.to_vec();
 
@@ -370,12 +421,22 @@ impl LobbyConnection {
                 })
                 .await;
             }
+
+            tracing::info!("Finished sending character list packets to client.");
         }
     }
 
     /// Send the host information for the world server to the client.
     pub async fn send_enter_world(&mut self, sequence: u64, content_id: u64, actor_id: ObjectId) {
         let config = get_config();
+
+        tracing::info!(
+            "Sending world entry for content_id {} actor_id {} host {} port {}.",
+            content_id,
+            actor_id,
+            config.world.server_name,
+            config.world.port
+        );
 
         let enter_world = ServerLobbyIpcData::GameLoginReply {
             sequence,
@@ -398,6 +459,13 @@ impl LobbyConnection {
 
     /// Send a lobby error to the client.
     pub async fn send_error(&mut self, sequence: u64, error: u32, exd_error: u16) {
+        tracing::warn!(
+            "Sending lobby error sequence={} error={} exd_error={}.",
+            sequence,
+            error,
+            exd_error
+        );
+
         let lobby_error = ServerLobbyIpcData::NackReply(NackReply {
             sequence,
             error,
@@ -686,6 +754,8 @@ impl LobbyConnection {
 
     pub async fn login(&mut self, sequence: u64, session_id: &str, version_info: &str) {
         tracing::info!("Client {session_id} ({version_info}) logging in!");
+        self.lobby_info_sent = false;
+        self.selected_service_account = None;
 
         let config = get_config();
 
@@ -728,9 +798,20 @@ impl LobbyConnection {
                 /* "<the game> has not yet been registered on this platform or your service account's subscription has expired. Please close the application and complete the registration process. If you would like to add a platform to your service account or renew your subscription, please visit the <website>). To register another platform, you must purchase a license for the applicable platform or complete the registration process using the registration code included with your purchase." */
                 self.send_error(sequence, 2002, 13209).await;
             } else {
+                tracing::info!(
+                    "Login server returned {} service account(s).",
+                    service_accounts.len()
+                );
                 self.service_accounts = service_accounts;
                 self.session_id = Some(session_id.to_string());
-                self.send_account_list().await;
+                self.send_account_list(sequence).await;
+
+                // Newer clients do not always send a follow-up ServiceLogin when there is only
+                // one valid service account. In that case we can continue immediately.
+                if self.service_accounts.len() == 1 {
+                    tracing::info!("Auto-selecting the sole service account.");
+                    self.handle_service_login(sequence, 0).await;
+                }
             }
         } else {
             tracing::warn!("Failed to parse service accounts from the login server!");
