@@ -445,19 +445,19 @@ ServerZoneIpcType:
   size: 16
 - name: StrategyBoard
   comment: The content id of the real-time sharing host, and the actual strategy board data to be shared.
-  opcode: 133
+  opcode: 135
   size: 1184
 - name: StrategyBoardReceivedAck
   comment: The server informs the sharing client that a client in the party has received a strategy board.
-  opcode: 690
+  opcode: 931
   size: 16
 - name: StrategyBoardUpdate
   comment: The client updates their strategy board during real-time sharing, and other party members are informed.
-  opcode: 931
+  opcode: 133
   size: 64
 - name: EndStrategyBoardSession
   comment: The client stopped sharing their strategy board, or if it wasn't real-time, the transfer has completed.
-  opcode: 865
+  opcode: 690
   size: 16
 - name: WaymarkUpdate
   comment: A client updated a waymark, and now their party needs to be informed.
@@ -577,7 +577,7 @@ ServerZoneIpcType:
   size: 26
 - name: CrossworldLinkshellsEx
   comment: Sent in response to the client opening the Crossworld Linkshell menu. It has additional information the login list does not.
-  opcode: 531
+  opcode: 203
   size: 520
 - name: CrossworldLinkshellMemberList
   comment: Sent in response to CrossworldLinkshellMemberList. Sends the member list of this CWLS.
@@ -621,7 +621,7 @@ ServerZoneIpcType:
   size: 40
 - name: NewCrossworldLinkshell
   comment: The server responds to NewCrossworldLinkshellInfoRequest, providing some information on the newly created/joined cwls.
-  opcode: 877
+  opcode: 781
   size: 64
 - name: RetainerInfo
   comment: Sent when the client requests retainer information through the bell.
@@ -633,11 +633,11 @@ ServerZoneIpcType:
   size: 24
 - name: CrossworldLinkshellDisbanded
   comment: The server informs the client that the linkshell has been disbanded.
-  opcode: 203
+  opcode: 986
   size: 40
 - name: CrossworldLinkshellMemberLeft
   comment: The server informs the client that a member in the linkshell has left (including themself if it was them).
-  opcode: 986
+  opcode: 413
   size: 64
 - name: CrossworldLinkshellRenamed
   comment: The server informs the client that the linkshell has been renamed.
@@ -649,15 +649,15 @@ ServerZoneIpcType:
   size: 64
 - name: CrossworldLinkshellInvite
   comment: The server informs the client about an invitation to a cross-world linkshell.
-  opcode: 115
+  opcode: 877
   size: 128
 - name: CrossworldLinkshellJoinedSelf
   comment: The server informs the client about the linkshell they just joined.
-  opcode: 413
+  opcode: 626
   size: 48
 - name: CrossworldLinkshellJoined2
   comment: The server informs the rest of the linkshell about the member that just joined.
-  opcode: 626
+  opcode: 115
   size: 56
 - name: MailboxStatus
   comment: Upon login, the server informs the client of how many letters they have in their mailbox, along with any that are from support/GMs.
@@ -802,7 +802,7 @@ ClientZoneIpcType:
   size: 40
 - name: Config
   comment: Unknown purpose.
-  opcode: 631
+  opcode: 353
   size: 8
 - name: EventYieldHandler2
   comment: Unknown purpose, but seen when trying to play a Gold Saucer arcade machine.
@@ -838,11 +838,11 @@ ClientZoneIpcType:
   size: 8
 - name: EquipGearset
   comment: Unknown purpose.
-  opcode: 594
+  opcode: 891
   size: 72
 - name: EquipGearset2
   comment: Unknown purpose, and also unsure why it's different from EquipGearset.
-  opcode: 1725
+  opcode: 594
   size: 128
 - name: StartWalkInEvent
   comment: Unknown purpose.
@@ -894,7 +894,7 @@ ClientZoneIpcType:
   size: 8
 - name: RequestCharaInfoFromContentIds
   comment: Happens when the client requests more information about other characters, and only has their content id.
-  opcode: 581
+  opcode: 208
   size: 80
 - name: PartyLeave
   comment: Happens when the client leaves their party.
@@ -962,7 +962,7 @@ ClientZoneIpcType:
   size: 1184
 - name: StrategyBoardReceived
   comment: The client acknowledges receipt of a strategy board from another player.
-  opcode: 1919
+  opcode: 919
   size: 16
 - name: StrategyBoardUpdate
   comment: The client updates their strategy board during real-time sharing.
@@ -1038,7 +1038,7 @@ ClientZoneIpcType:
   size: 8
 - name: LeaveCrossworldLinkshell
   comment: The client requests to leave a cross-world linkshell. Masters cannot do this, they first have to appoint a new Master or disband the linkshell entirely.
-  opcode: 1357
+  opcode: 325
   size: 8
 - name: RenameCrossworldLinkshell
   comment: The client requests to rename a cross-world linkshell. Only Masters can do this.
@@ -1050,7 +1050,7 @@ ClientZoneIpcType:
   size: 24
 - name: RemoveCWLSMember
   comment: The client kicks a member from one of their cross-world Linkshells. Only Leaders and Masters can do this.
-  opcode: 993
+  opcode: 929
   size: 16
 - name: InviteCharacterToCWLS
   comment: The client invites another character to join their cross-world linkshell. Only Leaders and Masters can do this.
@@ -1062,11 +1062,11 @@ ClientZoneIpcType:
   size: 16
 - name: RequestMailbox
   comment: The client requests the contents of their mailbox from the server.
-  opcode: 326
+  opcode: 796
   size: 8
 - name: SendLetter
   comment: The client sends a letter to a friend.
-  opcode: 287
+  opcode: 536
   size: 688
 - name: RemoveFriend
   comment: The client removes a player from their friend list.
@@ -1074,19 +1074,19 @@ ClientZoneIpcType:
   size: 48
 - name: ViewLetter
   comment: The client opens a letter in their mailbox.
-  opcode: 656
+  opcode: 326
   size: 16
 - name: DeleteLetter
   comment: The client deletes a letter in their mailbox.
-  opcode: 796
+  opcode: 287
   size: 16
 - name: RewardDeliveryRequest
   comment: The client requests that any pending reward letters be sent to them.
-  opcode: 747
+  opcode: 213
   size: 8
 - name: TakeLetterAttachments
   comment: The client requests that any attachments in this letter be given to them.
-  opcode: 213
+  opcode: 656
   size: 64
 - name: Dive
   comment: The client dives underwater.

@@ -180,6 +180,7 @@ async fn initial_setup(
                     mail_results: Vec::new(),
                     mail_index: 0,
                     spawned_in: false,
+                    offered_teleport: None,
                 };
 
                 // Handle setup before passing off control to the zone connection.
@@ -1712,6 +1713,21 @@ async fn process_packet(
                                         ))
                                         .await;
                                 }
+                                ClientTriggerCommand::TeleportOfferReply { decline_teleport } => {
+                                    if !decline_teleport
+                                        && let Some(offered_teleport) = &connection.offered_teleport
+                                    {
+                                        connection
+                                            .warp_aetheryte(
+                                                offered_teleport.aetheryte_id as u32,
+                                                false,
+                                                true,
+                                            )
+                                            .await;
+                                    } else {
+                                        connection.offered_teleport = None;
+                                    }
+                                }
                                 _ => {
                                     // inform the server of our trigger, it will handle sending it to other clients
                                     connection
@@ -3125,27 +3141,40 @@ async fn process_packet(
                             linkshell_id,
                             content_id,
                         } => {
-                            connection
+                            let result = connection
                                 .invite_to_linkshell(*content_id, *linkshell_id)
                                 .await;
+
+                            if result != LogMessageType::Default {
+                                connection.send_linkshell_error(result).await;
+                            }
                         }
                         ClientZoneIpcData::LinkshellInviteReply {
                             linkshell_id,
                             response,
-                        } => match response {
-                            LinkshellInviteResponse::Accepted => {
-                                connection.accepted_linkshell_invite(*linkshell_id).await
-                            }
-                            LinkshellInviteResponse::Declined => {
+                        } => {
+                            // Guard against bogus replies by checking if the client is in the shell or not. Invitees are considered actual members, but they just can't receive chat messages.
+                            if connection.is_in_linkshell(*linkshell_id).await {
+                                match response {
+                                    LinkshellInviteResponse::Accepted => {
+                                        connection.accepted_linkshell_invite(*linkshell_id).await
+                                    }
+                                    LinkshellInviteResponse::Declined => {
+                                        connection
+                                            .remove_linkshell_member(
+                                                *linkshell_id,
+                                                connection.player_data.character.content_id as u64,
+                                                CWLSLeaveReason::DeclinedInvite,
+                                            )
+                                            .await
+                                    }
+                                }
+                            } else {
                                 connection
-                                    .remove_linkshell_member(
-                                        *linkshell_id,
-                                        connection.player_data.character.content_id as u64,
-                                        CWLSLeaveReason::DeclinedInvite,
-                                    )
-                                    .await
+                                    .send_linkshell_error(LogMessageType::UnableToAcceptLSInvite)
+                                    .await;
                             }
-                        },
+                        }
                         ClientZoneIpcData::RequestMailbox { unk1, .. } => {
                             connection.send_letter_previews(*unk1).await;
                         }
@@ -3640,6 +3669,30 @@ async fn process_server_msg(
                     )
                     .await;
                 lua_player.zone_data = lua_zone;
+            }
+            FromServer::TeleportOffered(party_member_index, teleport_info) => {
+                // By default, don't allow the player to go.
+                let mut ineligible_for_teleport = true;
+                let aetheryte_id = teleport_info.aetheryte_id as u32;
+
+                // If the player has this destination unlocked and has no previously offered teleport, they can go too.
+                let unlocked = connection
+                    .player_data
+                    .aetheryte
+                    .unlocked
+                    .contains(aetheryte_id);
+                if unlocked && connection.offered_teleport.is_none() {
+                    connection.offered_teleport = Some(teleport_info);
+                    ineligible_for_teleport = false;
+                }
+
+                connection
+                    .actor_control_self(ActorControlCategory::TeleportOffered {
+                        ineligible_for_teleport,
+                        aetheryte_id,
+                        party_member_index,
+                    })
+                    .await;
             }
             FromServer::SocialInvite(
                 sender_account_id,

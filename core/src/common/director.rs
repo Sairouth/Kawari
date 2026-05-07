@@ -6,6 +6,14 @@ use binrw::binrw;
 #[binrw]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DirectorEvent {
+    /// Changes the festival phases for Ocean Fishing, but probably used for other things.
+    /// In Ocean Fishing, seen with params of 13 and 23 (IKDRoute + 1 and something else unknown.)
+    #[brw(magic = 2u32)]
+    ChangeFestivalPhases,
+    /// Shows the Ocean Fishing scoring window, but probably used for other things.
+    /// In Ocean Fishing, seen with a param of 19 (IKDRoute probably.)
+    #[brw(magic = 3u32)]
+    ShowOceanFishingWindow,
     /// Shows the Variant Dungeon vote window, but probably used for other things.
     /// For Variant Dungeons, the first `arg` is how many votes are needed and the second `arg` is what the NPC chose. Has no effect if there is no route associated with the duty (Another Merchant's Tale.)
     #[brw(magic = 0x10000002u32)]

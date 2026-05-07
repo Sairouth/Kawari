@@ -4,6 +4,7 @@ use crate::{
     ObsfucationData, TeleportReason, ToServer, ZoneConnection,
     inventory::BuyBackList,
     lua::{LuaContent, LuaZone},
+    zone_connection::TeleportQuery,
 };
 use kawari::{
     common::{
@@ -164,6 +165,40 @@ impl ZoneConnection {
             self.send_ipc_self(ipc).await;
         }
 
+        let mut game_festival_ids = config.world.active_festivals.map(FestivalId);
+        let mut game_festival_phases = [0; 8];
+
+        // Set up ocean fishing
+        {
+            let mut gamedata = self.gamedata.lock();
+            if let Some(spots) =
+                gamedata.lookup_ikd_route_spots_via_content(content_finder_condition_id as u32)
+            {
+                // Special festivals used for ocean fishing.
+                game_festival_ids = [
+                    FestivalId(101),
+                    FestivalId(102),
+                    FestivalId::default(),
+                    FestivalId::default(),
+                    FestivalId::default(),
+                    FestivalId::default(),
+                    FestivalId::default(),
+                    FestivalId::default(),
+                ];
+
+                game_festival_phases = [
+                    spots[0] as u16 + 1, // IKDSpot + 1
+                    23,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ];
+            }
+        }
+
         // Init Zone
         {
             let mut flags = if initial_login {
@@ -176,6 +211,8 @@ impl ZoneConnection {
 
             if !bound_by_duty {
                 flags |= ZoneInitFlags::ENABLE_FLYING;
+            } else {
+                self.offered_teleport = None; // Discard any previously offered teleports once we're in a duty.
             }
 
             let ipc = ServerZoneIpcSegment::new(ServerZoneIpcData::ZoneInit(ZoneInit {
@@ -183,7 +220,8 @@ impl ZoneConnection {
                 weather_id: weather_id as u8,
                 flags,
                 content_finder_condition_id,
-                game_festival_ids: config.world.active_festivals.map(FestivalId),
+                game_festival_ids,
+                game_festival_phases,
                 ui_festival_ids: config.world.active_festivals.map(FestivalId),
                 ..Default::default()
             }));
@@ -476,7 +514,12 @@ impl ZoneConnection {
             .await;
     }
 
-    pub async fn warp_aetheryte(&mut self, aetheryte_id: u32, housing_aethernet: bool) {
+    pub async fn warp_aetheryte(
+        &mut self,
+        aetheryte_id: u32,
+        housing_aethernet: bool,
+        taking_offered_teleport: bool,
+    ) {
         self.teleport_reason = TeleportReason::Aetheryte;
         self.handle
             .send(ToServer::WarpAetheryte(
@@ -486,6 +529,25 @@ impl ZoneConnection {
                 housing_aethernet,
             ))
             .await;
+
+        if self.party_id != 0 && !housing_aethernet && !taking_offered_teleport {
+            let teleport_info = TeleportQuery {
+                aetheryte_id: aetheryte_id as u16,
+            };
+
+            self.handle
+                .send(ToServer::OfferTeleportToParty(
+                    Some(self.party_id),
+                    self.player_data.character.actor_id,
+                    self.player_data.volatile.zone_id as u16,
+                    teleport_info,
+                ))
+                .await;
+        }
+
+        if taking_offered_teleport {
+            self.offered_teleport = None;
+        }
     }
 
     pub async fn change_weather(&mut self, new_weather_id: u8) {
