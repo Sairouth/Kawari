@@ -22,9 +22,10 @@ impl ZoneConnection {
     }
 
     fn persist_quest_state(&mut self) {
-        let mut database = self.database.lock();
-        database.commit_quest(&self.player_data.quest);
+    let mut database = self.database.lock();
+    database.commit_player_data(&self.player_data);
     }
+
 
     async fn refresh_quest_views(&mut self) {
         self.send_active_quests().await;
